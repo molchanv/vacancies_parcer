@@ -1,6 +1,5 @@
 import requests
-import urllib.request
-from bs4 import BeautifulSoup
+from base.app.html_parser import sector_hh, get_html
 from base.forms import EmployerForm
 from base.models import Employer
 
@@ -12,7 +11,7 @@ def to_db(employers):
         normal_url = 'https://hh.ru/employer/%s' % (employer)
         r = requests.get(url, headers=user_agent)
         employer = r.json()
-        count = vacancy_count(employer['vacancies_url'])
+        count = get_vacancy_count(employer['vacancies_url'])
         address = get_address(url)
         sector = get_sector(normal_url)
         employer_info = {
@@ -30,22 +29,14 @@ def to_db(employers):
                 new_employer.save()
 
 
-def vacancy_count(vacancies_url):
-    r = requests.get(vacancies_url, headers=user_agent)
-    count = len(r.json()['items'])
-    return count
-
-
-def get_address(employer_url):
-    r = requests.get(employer_url, headers=user_agent)
-    address = r.json()['area']['name']
-    return address
-
 # HEAD HUNTER API
 
+# Получить первые 2000 вакансий по России с текстом "Продавец консультант"
 def hh_parser():
+    # В список записываются id работодателей
     employers = []
-    page = 0
+    # Страница с которой начинается сбор информации (max - 99)
+    page = 90
     while page != 100:
         url = 'https://api.hh.ru/vacancies?text=Продавец+консультант&area=113&order_by=publication_time&page=%s' % (page)
         r = requests.get(url, headers=user_agent)
@@ -53,28 +44,20 @@ def hh_parser():
         for vacancy in vacancies:
             employers.append(vacancy['employer']['id'])
         page += 1
+    # Возвращает список без дубликатов id
     return set(employers)
 
-# HTML PARSER for HEAD HUNTER
+def get_vacancy_count(vacancies_url):
+    r = requests.get(vacancies_url, headers=user_agent)
+    count = len(r.json()['items'])
+    return count
 
+def get_address(employer_url):
+    r = requests.get(employer_url, headers=user_agent)
+    address = r.json()['area']['name']
+    return address
+
+# получить отрасли компании по её ссылке
 def get_sector(employer_url):
-    return parse(get_html(employer_url))
+    return sector_hh(get_html(employer_url))
 
-def get_html(url):
-    r = urllib.request.urlopen(url)
-    return r.read()
-
-def parse(html):
-    l = []
-    soup = BeautifulSoup(html, "html.parser")
-    try:
-        sidebar = soup.find('div', class_='company-sidebar')
-        company_header = sidebar.find_all('p', class_='company-header')[-1]
-        if company_header == 'Сферы деятельности':
-            while company_header != None:
-                l.append(company_header.text)
-                company_header = company_header.nextSibling
-    except:
-        pass
-
-    return l[1:]
